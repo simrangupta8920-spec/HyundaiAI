@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Send, AlertTriangle, Mic, MicOff,
-  Car as CarIcon, MapPin, Wifi, WifiOff, Loader2, X, CheckCircle,
+  Car as CarIcon, MapPin, Wifi, WifiOff, Loader2, X, CheckCircle, Activity, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useConversation } from '../hooks/useConversation';
 import { VoiceWaveform } from '../components/VoiceWaveform';
@@ -46,6 +46,7 @@ export const VoiceAssistant: React.FC = () => {
   const [leadEmail, setLeadEmail] = useState('');
   const [leadSaved, setLeadSaved] = useState(false);
   const [isLeadFormDismissed, setIsLeadFormDismissed] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   const showLeadModal = shouldCollectLead && !isLeadFormDismissed;
 
@@ -67,8 +68,19 @@ export const VoiceAssistant: React.FC = () => {
     } else {
       setWaveformState('idle');
     }
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [isLoading, voiceState.speakingState, isConnected, messages]);
+  }, [isLoading, voiceState.speakingState, isConnected]);
+
+  // ── Auto-scroll chat transcript to bottom ──────────────────────────────────
+  const scrollToBottom = (smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
+  };
+
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      scrollToBottom(true);
+    }
+  }, [messages, isLoading, activeTab]);
+
 
   // ── Auto-switch to cars tab when recommendations arrive ──────────────────────
   useEffect(() => {
@@ -186,11 +198,11 @@ export const VoiceAssistant: React.FC = () => {
       </header>
 
       {/* Main Layout */}
-      <div className="flex flex-1 overflow-hidden flex-col lg:flex-row">
+      <div className="flex flex-1 min-h-0 overflow-hidden flex-col lg:flex-row">
 
         {/* Left Panel: Voice Control & Input */}
-        <div className="w-full lg:w-1/2 flex flex-col items-center justify-center p-6 bg-white border-r relative shrink-0">
-          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md">
+        <div className="w-full lg:w-1/2 flex flex-col items-center justify-between p-6 bg-white border-b lg:border-b-0 lg:border-r overflow-y-auto custom-scrollbar min-h-0">
+          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md py-4">
             <VoiceWaveform state={waveformState} />
 
             {/* Mic status label */}
@@ -250,14 +262,111 @@ export const VoiceAssistant: React.FC = () => {
             </div>
 
             <button onClick={handleEndSession} className="mt-8 text-sm text-gray-500 hover:text-gray-900 underline">
-              End Session & View Summary
+              End Session &amp; View Summary
             </button>
+
+            {/* ── Debug / Status Panel ─────────────────────────────────────── */}
+            <div className="mt-6 w-full max-w-md">
+              <button
+                onClick={() => setShowDebug((v) => !v)}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 mx-auto transition-colors"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Voice Diagnostics
+                {showDebug ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+
+              {showDebug && (
+                <div className="mt-3 bg-gray-900 text-gray-300 rounded-xl p-4 text-xs font-mono space-y-1.5 text-left shadow-lg">
+                  <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-2">Agora Voice Diagnostics</p>
+
+                  {/* RTC Status */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">RTC Status</span>
+                    <span className={
+                      voiceState.connectionState === 'connected' ? 'text-green-400' :
+                      voiceState.connectionState === 'connecting' ? 'text-yellow-400' :
+                      voiceState.connectionState === 'error' ? 'text-red-400' : 'text-gray-500'
+                    }>{voiceState.connectionState.toUpperCase()}</span>
+                  </div>
+
+                  {/* Microphone */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Microphone</span>
+                    <span className={
+                      voiceState.micStatus === 'active' ? 'text-green-400' :
+                      voiceState.micStatus === 'muted' ? 'text-yellow-400' :
+                      voiceState.micStatus === 'permission_denied' ? 'text-red-400' : 'text-gray-500'
+                    }>{voiceState.micStatus.toUpperCase()}</span>
+                  </div>
+
+                  {/* AI Agent */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">AI Agent</span>
+                    <span className={
+                      voiceState.agentStatus === 'active' ? 'text-green-400' :
+                      voiceState.agentStatus === 'starting' ? 'text-yellow-400' :
+                      voiceState.agentStatus === 'error' ? 'text-red-400' :
+                      voiceState.agentStatus === 'not_configured' ? 'text-orange-400' :
+                      voiceState.agentStatus === 'stopped' ? 'text-gray-500' : 'text-gray-600'
+                    }>{voiceState.agentStatus.toUpperCase().replace('_', ' ')}</span>
+                  </div>
+
+                  {/* AI Audio */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">AI Audio</span>
+                    <span className={voiceState.speakingState === 'ai_speaking' ? 'text-green-400 animate-pulse' : 'text-gray-600'}>
+                      {voiceState.speakingState === 'ai_speaking' ? 'SPEAKING ▶' : voiceState.speakingState.toUpperCase().replace('_', ' ')}
+                    </span>
+                  </div>
+
+                  {/* Remote participants */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Remote Participants</span>
+                    <span className={voiceState.remoteParticipants > 0 ? 'text-green-400' : 'text-gray-600'}>
+                      {voiceState.remoteParticipants}
+                    </span>
+                  </div>
+
+                  {/* Channel */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Channel</span>
+                    <span className="text-blue-400 truncate max-w-[160px]" title={voiceState.channelName || '—'}>
+                      {voiceState.channelName || '—'}
+                    </span>
+                  </div>
+
+                  {/* Agent ID */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Agent ID</span>
+                    <span className="text-purple-400 truncate max-w-[160px]" title={voiceState.agentId || '—'}>
+                      {voiceState.agentId ? voiceState.agentId.slice(0, 16) + '…' : '—'}
+                    </span>
+                  </div>
+
+                  {/* Mode */}
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">Mode</span>
+                    <span className={voiceState.isMockMode ? 'text-orange-400' : 'text-cyan-400'}>
+                      {voiceState.isMockMode ? 'DEMO / MOCK' : 'LIVE AGORA'}
+                    </span>
+                  </div>
+
+                  {/* Error */}
+                  {voiceState.errorMessage && (
+                    <div className="mt-2 pt-2 border-t border-gray-700">
+                      <p className="text-red-400 text-[10px] break-words">{voiceState.errorMessage}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Right Panel: Chat & Recommendations tabs */}
-        <div className="w-full lg:w-1/2 flex flex-col h-[50vh] lg:h-full bg-gray-50 shrink-0">
-          <div className="flex border-b bg-white px-2 pt-2">
+        <div className="w-full lg:w-1/2 flex flex-col min-h-0 bg-gray-50 h-[500px] lg:h-auto flex-1">
+          <div className="flex border-b bg-white px-2 pt-2 shrink-0">
             <button
               onClick={() => setActiveTab('chat')}
               className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'chat' ? 'border-hyundai-blue text-hyundai-blue' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
@@ -275,22 +384,24 @@ export const VoiceAssistant: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 lg:pb-6 relative">
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6 relative">
             {activeTab === 'chat' && (
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col min-h-full">
+                <div className="flex-1" />
                 {messages.map((msg) => (
                   <TranscriptMessage key={msg.id} message={msg} />
                 ))}
                 {isLoading && (
-                  <div className="flex justify-start mb-4">
-                    <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-none px-4 py-3 text-sm flex gap-1 items-center">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200"></div>
+                  <div className="flex justify-start mb-3">
+                    <div className="bg-white border border-gray-100 rounded-2xl rounded-bl-none px-4 py-3 text-sm flex gap-2 items-center shadow-sm">
+                      <span className="text-xs text-gray-400 font-medium">AI Sales Executive is replying</span>
+                      <div className="w-1.5 h-1.5 bg-hyundai-blue rounded-full animate-bounce"></div>
+                      <div className="w-1.5 h-1.5 bg-hyundai-blue rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                      <div className="w-1.5 h-1.5 bg-hyundai-blue rounded-full animate-bounce [animation-delay:0.4s]"></div>
                     </div>
                   </div>
                 )}
-                <div ref={messagesEndRef} />
+                <div ref={messagesEndRef} className="h-px" />
               </div>
             )}
 
@@ -311,6 +422,7 @@ export const VoiceAssistant: React.FC = () => {
           </div>
         </div>
       </div>
+
 
       {/* Escalation Modal */}
       {shouldEscalate && (

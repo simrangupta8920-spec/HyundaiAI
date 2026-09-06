@@ -1,9 +1,12 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 from app.services.agora.agora_service import AgoraService
 
 router = APIRouter(prefix="/agora", tags=["agora"])
+
+
+# ── Request / Response models ─────────────────────────────────────────────────
 
 class AgoraTokenRequest(BaseModel):
     showroom_id: str
@@ -25,6 +28,13 @@ class AgoraTokenResponse(BaseModel):
 class AgentStartRequest(BaseModel):
     channel_name: str
     session_id: str
+    agent_uid: Optional[int] = None
+
+class AgentStopRequest(BaseModel):
+    agent_id: str
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/token", response_model=AgoraTokenResponse)
 def get_agora_token(req: AgoraTokenRequest):
@@ -43,23 +53,48 @@ def get_agora_token(req: AgoraTokenRequest):
     )
     return session_data
 
+
 @router.post("/conversational-agent/start")
 def start_conversational_agent(req: AgentStartRequest):
     """
-    Triggers the Agora Conversational AI Agent for real-time STT -> LLM -> TTS voice loop.
-    Contains TODO markers for external Agora console & REST API configuration.
+    Starts the Agora Conversational AI Agent for the given channel.
+    The agent joins the RTC channel as a separate participant and handles:
+      Customer mic → ASR (Deepgram nova-3) → LLM (GPT-4.1-mini) → TTS (Minimax) → RTC audio
+
+    Returns agent_id needed to stop the agent later.
     """
-    return AgoraService.start_conversational_ai_agent(
+    if not req.channel_name or not req.session_id:
+        raise HTTPException(status_code=400, detail="channel_name and session_id are required")
+
+    result = AgoraService.start_conversational_ai_agent(
         channel_name=req.channel_name,
-        session_id=req.session_id
+        session_id=req.session_id,
+        agent_uid=req.agent_uid,
     )
+    return result
+
+
+@router.post("/conversational-agent/stop")
+def stop_conversational_agent(req: AgentStopRequest):
+    """
+    Stops a running Agora Conversational AI Agent by agent_id.
+    Call this when the user ends their voice session.
+    """
+    if not req.agent_id:
+        raise HTTPException(status_code=400, detail="agent_id is required")
+
+    result = AgoraService.stop_conversational_ai_agent(agent_id=req.agent_id)
+    return result
+
 
 @router.get("/status")
 def get_agora_status():
-    """Returns the backend Agora voice configuration status."""
-    is_configured = AgoraService.is_agora_configured()
+    """Returns the backend Agora voice and Conversational AI configuration status."""
+    is_rtc_configured = AgoraService.is_agora_configured()
+    is_convo_ai_configured = AgoraService.is_conversational_ai_configured()
     return {
-        "agora_configured": is_configured,
-        "mock_voice": not is_configured,
-        "channel_prefix": "hyundai"
+        "agora_rtc_configured": is_rtc_configured,
+        "agora_conversational_ai_configured": is_convo_ai_configured,
+        "mock_voice": not is_rtc_configured,
+        "channel_prefix": "hyundai",
     }

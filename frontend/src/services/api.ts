@@ -5,16 +5,14 @@ const api = axios.create({
   baseURL: '/api',
 });
 
-// Utility to handle mock token login
+// CRM Authentication — calls the real /api/auth/login endpoint
 export const crmLogin = async (email: string, password: string) => {
   try {
     const res = await api.post('/auth/login', { email, password });
-    return res.data;
-  } catch (error) {
-    if (email === 'admin@showroom.com' && password === 'admin123') {
-      return { access_token: 'mock-token-123', token_type: 'bearer' };
-    }
-    throw new Error('Invalid credentials');
+    return res.data; // { access_token, token_type, user }
+  } catch (error: any) {
+    const detail = error?.response?.data?.detail;
+    throw new Error(detail || 'Invalid credentials. Please check your email and password.');
   }
 };
 

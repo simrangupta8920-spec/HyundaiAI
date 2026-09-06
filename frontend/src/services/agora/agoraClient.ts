@@ -7,13 +7,14 @@
 
 import AgoraRTC, {
   IAgoraRTCClient,
+  IAgoraRTCRemoteUser,
   ILocalAudioTrack,
   UID,
 } from 'agora-rtc-sdk-ng';
 import axios from 'axios';
-import type { AgoraTokenResponse } from './agoraTypes';
+import type { AgoraTokenResponse, AgoraAgentStartResponse } from './agoraTypes';
 
-// --- Backend token endpoint ---------------------------------------------------
+// --- Backend API base ---------------------------------------------------------
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export async function getAgoraTokenFromBackend(
@@ -25,6 +26,28 @@ export async function getAgoraTokenFromBackend(
     session_id: sessionId,
   });
   return response.data;
+}
+
+/** Calls backend to start the Agora Conversational AI Agent for the given channel. */
+export async function startConversationalAgent(
+  channelName: string,
+  sessionId: string,
+): Promise<AgoraAgentStartResponse> {
+  const response = await axios.post<AgoraAgentStartResponse>(
+    `${API_BASE}/api/agora/conversational-agent/start`,
+    { channel_name: channelName, session_id: sessionId },
+  );
+  return response.data;
+}
+
+/** Calls backend to stop a running Agora Conversational AI Agent. */
+export async function stopConversationalAgent(agentId: string): Promise<void> {
+  try {
+    await axios.post(`${API_BASE}/api/agora/conversational-agent/stop`, { agent_id: agentId });
+  } catch (err) {
+    // Best-effort — don't throw if stop fails (session may have already ended)
+    console.warn('[Agora] Agent stop request failed (non-fatal):', err);
+  }
 }
 
 // --- Microphone permission ----------------------------------------------------
@@ -46,7 +69,7 @@ export function createAgoraClient(): IAgoraRTCClient {
 // --- Join / leave ------------------------------------------------------------
 /**
  * Joins an Agora channel and publishes a local microphone track.
- * Returns the mic track so callers can mute/unmute it later.
+ * Subscribes to & plays audio from remote AI participants automatically.
  */
 export async function joinChannel(
   client: IAgoraRTCClient,
@@ -54,19 +77,39 @@ export async function joinChannel(
   channelName: string,
   token: string,
   uid: UID,
+  onRemoteAudioStateChange?: (isSpeaking: boolean) => void,
 ): Promise<ILocalAudioTrack> {
+  // Listen for remote AI Conversational participant publishing audio
+  client.on('user-published', async (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+    if (mediaType === 'audio') {
+      await client.subscribe(user, 'audio');
+      user.audioTrack?.play();
+      console.log(`[Agora RTC] Subscribed to remote AI audio participant (${user.uid})`);
+      if (onRemoteAudioStateChange) {
+        onRemoteAudioStateChange(true);
+      }
+    }
+  });
+
+  client.on('user-unpublished', (user: IAgoraRTCRemoteUser, mediaType: 'audio' | 'video') => {
+    if (mediaType === 'audio') {
+      console.log(`[Agora RTC] Remote audio participant (${user.uid}) stopped speaking`);
+      if (onRemoteAudioStateChange) {
+        onRemoteAudioStateChange(false);
+      }
+    }
+  });
+
+  client.on('user-left', (user: IAgoraRTCRemoteUser) => {
+    console.log(`[Agora RTC] Remote participant (${user.uid}) left channel`);
+    if (onRemoteAudioStateChange) {
+      onRemoteAudioStateChange(false);
+    }
+  });
+
   await client.join(appId, channelName, token, uid);
   const micTrack = await AgoraRTC.createMicrophoneAudioTrack();
   await client.publish([micTrack]);
-
-  // TODO: Listen for Agora Conversational AI agent joining the channel.
-  // Configure the AI agent in the Agora Console / via REST and wire up:
-  // client.on('user-published', async (user, mediaType) => {
-  //   if (mediaType === 'audio') {
-  //     await client.subscribe(user, 'audio');
-  //     user.audioTrack?.play();
-  //   }
-  // });
 
   return micTrack;
 }
@@ -93,12 +136,6 @@ export function unmuteLocalMic(micTrack: ILocalAudioTrack): void {
 }
 
 // --- Volume indicator --------------------------------------------------------
-/**
- * Enable the volume-indicator event (fires every ~200 ms).
- * Call once after joining so the hook can detect speaking activity.
- */
 export function enableVolumeIndicator(client: IAgoraRTCClient): void {
-  // enableAudioVolumeIndicator emits 'volume-indicator' events every 2 seconds by default.
-  // Adjust interval via Agora Console or the RTC engine config if needed.
   client.enableAudioVolumeIndicator();
 }

@@ -6,7 +6,7 @@ import { AlertCircle, Lock } from 'lucide-react';
 
 export const CRMLogin: React.FC = () => {
   const [email, setEmail] = useState('admin@showroom.com');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -18,17 +18,34 @@ export const CRMLogin: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('[CRMLogin] Form submitted. Email:', email);
     setError('');
     setLoading(true);
+
     try {
+      console.log('[CRMLogin] Calling crmLogin API...');
       const data = await crmLogin(email, password);
-      login(data.access_token);
-      navigate('/crm/dashboard');
+      console.log('[CRMLogin] crmLogin success. Token received:', data?.access_token ? 'YES' : 'NO', data);
+
+      if (data?.access_token) {
+        login(data.access_token);
+        console.log('[CRMLogin] Auth token set. Navigating to /crm/dashboard...');
+        navigate('/crm/dashboard', { replace: true });
+      } else {
+        setError('Login failed: Server did not return an access token.');
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to login');
+      console.error('[CRMLogin] crmLogin error caught:', err);
+      setError(err.message || 'Failed to sign in. Please check your credentials.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFillDemoCredentials = () => {
+    console.log('[CRMLogin] Filling demo credentials');
+    setEmail('admin@showroom.com');
+    setPassword('admin123');
   };
 
   return (
@@ -85,20 +102,25 @@ export const CRMLogin: React.FC = () => {
             <button 
               type="submit" 
               disabled={loading}
-              className="btn-primary mt-4 flex justify-center items-center gap-2"
+              className="btn-primary mt-4 flex justify-center items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
             >
               {loading ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <Lock className="w-4 h-4" />}
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
 
-          <div className="mt-8 text-center bg-gray-50 p-4 rounded-xl text-sm text-gray-600 border border-gray-200">
-            <p className="font-semibold mb-1">Demo Credentials</p>
-            <p>Email: <span className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-800">admin@showroom.com</span></p>
-            <p>Password: <span className="font-mono bg-gray-200 px-1 py-0.5 rounded text-gray-800">admin123</span></p>
+          <div
+            onClick={handleFillDemoCredentials}
+            className="mt-8 text-center bg-gray-50 hover:bg-blue-50/50 p-4 rounded-xl text-sm text-gray-600 border border-gray-200 hover:border-blue-200 cursor-pointer transition-all group"
+            title="Click to auto-fill demo credentials"
+          >
+            <p className="font-semibold mb-1 text-hyundai-blue group-hover:underline">Demo Credentials (Click to Auto-fill)</p>
+            <p>Email: <span className="font-mono bg-gray-200 group-hover:bg-blue-100 px-1.5 py-0.5 rounded text-gray-800">admin@showroom.com</span></p>
+            <p>Password: <span className="font-mono bg-gray-200 group-hover:bg-blue-100 px-1.5 py-0.5 rounded text-gray-800">admin123</span></p>
           </div>
         </div>
       </div>
     </div>
   );
 };
+

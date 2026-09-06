@@ -6,10 +6,12 @@ from app.core.config import settings
 from app.database import init_db, SessionLocal
 from app.models.showroom import Showroom
 from app.models.car import Car
+from app.models.user import User  # must import so Base.metadata includes users table
 
 from app.routers import (
     showroom, cars, conversation, lead, scoring, negotiation, escalation, vehicles, agora, demo
 )
+from app.routers import auth  # auth router
 
 app = FastAPI(title="AI Showroom Sales Executive API")
 
@@ -65,11 +67,22 @@ def seed_db():
     finally:
         db.close()
 
+def seed_users():
+    """Create the default admin CRM user if it doesn't exist yet."""
+    db = SessionLocal()
+    try:
+        from app.routers.auth import seed_default_admin
+        seed_default_admin(db)
+    finally:
+        db.close()
+
 @app.on_event("startup")
 def on_startup():
     init_db()
     seed_db()
+    seed_users()
 
+app.include_router(auth.router, prefix="/api")
 app.include_router(showroom.router, prefix="/api")
 app.include_router(cars.router, prefix="/api")
 app.include_router(conversation.router, prefix="/api")

@@ -61,10 +61,6 @@ _INDIAN_STATES = [
     "gujarat", "west bengal", "telangana", "rajasthan", "kerala",
     "punjab", "haryana", "madhya pradesh",
 ]
-_HYUNDAI_MODELS = [
-    "grand i10 nios", "i10", "i20", "aura", "verna", "creta", "venue",
-    "tucson", "exter", "ioniq 5", "ioniq5", "alcazar", "santro",
-]
 _COMPETITOR_MODELS = {
     "nexon": ("Tata Motors", "Nexon"),
     "harrier": ("Tata Motors", "Harrier"),
@@ -72,18 +68,37 @@ _COMPETITOR_MODELS = {
     "punch": ("Tata Motors", "Punch"),
     "curvv": ("Tata Motors", "Curvv"),
     "tiago": ("Tata Motors", "Tiago"),
-    "altroz": ("Tata Motors", "Altroz"),
+    "sierra": ("Tata Motors", "Sierra"),
     "brezza": ("Maruti Suzuki", "Brezza"),
     "swift": ("Maruti Suzuki", "Swift"),
     "baleno": ("Maruti Suzuki", "Baleno"),
     "fronx": ("Maruti Suzuki", "Fronx"),
     "grand vitara": ("Maruti Suzuki", "Grand Vitara"),
-    "ertiga": ("Maruti Suzuki", "Ertiga"),
     "wagonr": ("Maruti Suzuki", "WagonR"),
-    "alto": ("Maruti Suzuki", "Alto"),
+    "alto": ("Maruti Suzuki", "Alto K10"),
     "s-presso": ("Maruti Suzuki", "S-Presso"),
     "invicto": ("Maruti Suzuki", "Invicto"),
+    "victoris": ("Maruti Suzuki", "Victoris"),
 }
+
+
+def _get_hyundai_models_from_data() -> List[str]:
+    """Return a list of Hyundai model name slugs from the live data source."""
+    hyundai_vehicles = search_vehicles(brand="Hyundai")
+    return list({v["model"].lower() for v in hyundai_vehicles})
+
+
+# Cached at module import — refreshed if vehicle_service cache is invalidated
+_HYUNDAI_MODELS: List[str] = []
+
+def _ensure_hyundai_models() -> List[str]:
+    """Lazy-load Hyundai models from data (once)."""
+    global _HYUNDAI_MODELS
+    if not _HYUNDAI_MODELS:
+        _HYUNDAI_MODELS = _get_hyundai_models_from_data()
+    return _HYUNDAI_MODELS
+
+
 
 
 def _extract_budget(text: str) -> Tuple[Optional[float], Optional[float]]:
@@ -219,8 +234,8 @@ def extract_state_updates(msg: str, state: CustomerState) -> CustomerState:
     if td is not None:
         updated.test_drive_interest = td
 
-    # Hyundai preferred model
-    for model in _HYUNDAI_MODELS:
+    # Hyundai preferred model — detected from live data
+    for model in _ensure_hyundai_models():
         if model in msg_l:
             updated.preferred_model = model.title()
             break
@@ -502,18 +517,37 @@ class MockLLMProvider(BaseLLMProvider):
                 should_collect_lead=True,
             )
 
-        # 3b. Handle sub-5 Lakh low budget honest competitor trade-off
+        # 3b. Handle sub-5 Lakh low budget — honest Hyundai vs competitor trade-off
         if any(w in msg_l for w in ["under 5", "sub 5", "4 lakh", "3 lakh", "cheap car"]):
+            # Look up the actual cheapest Hyundai from real data
+            all_hyundai = search_vehicles(brand="Hyundai", state=updated_state.state or "Delhi")
+            all_hyundai_sorted = sorted(all_hyundai, key=lambda v: v.get("on_road_price") or 9999)
+            all_competitors = search_vehicles(state=updated_state.state or "Delhi")
+            cheapest_comp = [v for v in all_competitors if v["is_competitor"]]
+            cheapest_comp_sorted = sorted(cheapest_comp, key=lambda v: v.get("on_road_price") or 9999)
+
+            if all_hyundai_sorted:
+                h = all_hyundai_sorted[0]  # cheapest Hyundai
+                hyundai_line = f"Hyundai {h['model']} (₹{h['showroom_price']} L ex-showroom, ₹{h['on_road_price']} L on-road, Rating {h['rating']}/5)"
+            else:
+                hyundai_line = "our Hyundai entry models"
+
+            if cheapest_comp_sorted:
+                c = cheapest_comp_sorted[0]  # cheapest competitor
+                comp_line = f"{c['brand']} {c['model']} starts at ₹{c['on_road_price']} L"
+            else:
+                comp_line = "some competitor options"
+
             return ChatResult(
                 reply=(
-                    "Our Hyundai range starts with the Grand i10 Nios at ₹5.4 Lakhs in Delhi (Rating 4.35/5). "
-                    "Competitors like Maruti S-Presso/Alto start under ₹5 Lakhs. While Maruti fits a sub-₹5 Lakh budget, "
-                    "the Grand i10 Nios provides a safer chassis, higher rating, and premium interior. "
-                    "If your budget is flexible up to ₹5.4 Lakhs, I highly recommend the Grand i10 Nios. "
-                    "Shall I arrange a test drive or connect you with our executive for EMI options?"
+                    f"Our entry-level Hyundai is the {hyundai_line}. "
+                    f"For a strictly sub-₹5 Lakh budget, {comp_line} — though Hyundai offers a safer chassis, higher rating, and better long-term value. "
+                    f"If your budget can stretch slightly, the Hyundai entry model is worth it. "
+                    f"Shall I arrange a test drive or share EMI options?"
                 ),
                 customer_state=updated_state,
             )
+
 
         # 4. Handle competitor comparison queries
         detected_competitor = None

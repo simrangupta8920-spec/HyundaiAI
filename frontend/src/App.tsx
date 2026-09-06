@@ -1,11 +1,15 @@
 import React from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
+import { AuthProvider } from './hooks/useAuth';
 
 const App: React.FC = () => {
   return (
-    <RouterProvider router={router} />
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
   );
 };
 
 export default App;
+

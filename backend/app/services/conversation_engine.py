@@ -1,4 +1,4 @@
-﻿"""
+"""
 conversation_engine.py
 Central orchestrator for every conversation turn.
 
@@ -30,8 +30,16 @@ from app.services.vehicle_service import recommend_vehicles, search_vehicles
 def build_vehicle_context(state: CustomerState, max_vehicles: int = 8) -> str:
     """
     Build a compact markdown table of relevant Hyundai vehicles for the system prompt.
-    Falls back to a sample of all Hyundai vehicles if no filters are available.
+    Delegates to excel_loader.build_llm_vehicle_context() which reads live Excel data.
+    Falls back to vehicle_service.search_vehicles if excel_loader is unavailable.
     """
+    try:
+        from app.services.excel_loader import build_llm_vehicle_context
+        return build_llm_vehicle_context(brand="Hyundai", customer_state=state)
+    except Exception:
+        pass
+
+    # Fallback: direct vehicle_service query
     budget = state.get_budget_midpoint()
     location = state.state or "Delhi"
 
@@ -43,13 +51,10 @@ def build_vehicle_context(state: CustomerState, max_vehicles: int = 8) -> str:
         seating_capacity=state.family_size,
         state=location,
     )
-
-    # If filters are too narrow and returned nothing, broaden
     if not results:
         results = search_vehicles(brand="Hyundai", state=location)
 
-    # Deduplicate by model (take first state-match)
-    seen_models = set()
+    seen_models: set = set()
     deduped = []
     for v in results:
         if v["model"] not in seen_models:

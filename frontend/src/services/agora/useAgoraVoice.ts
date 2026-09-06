@@ -1,18 +1,28 @@
 /**
  * useAgoraVoice.ts
  * React hook that owns the complete Agora voice lifecycle:
- *   - Requests microphone permission
- *   - Fetches an RTC token from the backend
- *   - Joins / leaves the Agora channel
- *   - Tracks connection state, mic status, speaking state, mute flag
- *   - Provides a mock mode (no real SDK calls) when mock_voice === true
+ *   1. Fetches RTC token from backend
+ *   2. Joins the Agora RTC channel (customer browser publishes mic)
+ *   3. Starts the Agora Conversational AI Agent (backend calls Agora REST API)
+ *      - Agent joins same channel as a remote participant
+ *      - Agent does: Customer audio → ASR (Deepgram) → LLM (GPT-4.1-mini) → TTS (Minimax) → RTC
+ *   4. Subscribes to and plays remote AI participant audio
+ *   5. Tracks connection state, mic status, speaking state, agent status
+ *   6. On leave: stops the agent, unpublishes mic, leaves channel
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { IAgoraRTCClient, ILocalAudioTrack } from 'agora-rtc-sdk-ng';
-import type { AgoraConnectionState, AgoraVoiceState, MicrophoneStatus, SpeakingState } from './agoraTypes';
+import type {
+  AgoraConnectionState,
+  AgoraVoiceState,
+  MicrophoneStatus,
+  SpeakingState,
+} from './agoraTypes';
 import {
   getAgoraTokenFromBackend,
+  startConversationalAgent,
+  stopConversationalAgent,
   requestMicrophonePermission,
   createAgoraClient,
   joinChannel as sdkJoinChannel,
@@ -22,7 +32,6 @@ import {
   enableVolumeIndicator,
 } from './agoraClient';
 
-// How loud (0-255) a user must be to be considered "speaking"
 const SPEAKING_VOLUME_THRESHOLD = 20;
 
 const INITIAL_STATE: AgoraVoiceState = {
@@ -33,6 +42,9 @@ const INITIAL_STATE: AgoraVoiceState = {
   isMockMode: false,
   channelName: null,
   errorMessage: null,
+  agentStatus: 'inactive',
+  agentId: null,
+  remoteParticipants: 0,
 };
 
 export interface UseAgoraVoiceReturn {
@@ -48,13 +60,13 @@ export function useAgoraVoice(
 ): UseAgoraVoiceReturn {
   const [voiceState, setVoiceState] = useState<AgoraVoiceState>(INITIAL_STATE);
 
-  // Persistent refs so callbacks always see the latest values
   const clientRef = useRef<IAgoraRTCClient | null>(null);
   const micTrackRef = useRef<ILocalAudioTrack | null>(null);
   const isMockRef = useRef(false);
   const isMutedRef = useRef(false);
+  const agentIdRef = useRef<string | null>(null);
+  const isJoiningRef = useRef(false);
 
-  // Convenience updater
   const patch = useCallback((partial: Partial<AgoraVoiceState>) => {
     setVoiceState((prev) => ({ ...prev, ...partial }));
   }, []);
@@ -62,6 +74,11 @@ export function useAgoraVoice(
   // ── Cleanup on unmount ───────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
+      // Stop agent if still running
+      if (agentIdRef.current) {
+        stopConversationalAgent(agentIdRef.current).catch(() => {});
+        agentIdRef.current = null;
+      }
       if (!isMockRef.current && clientRef.current) {
         sdkLeaveChannel(clientRef.current, micTrackRef.current).catch(() => {});
       }
@@ -71,12 +88,18 @@ export function useAgoraVoice(
   // ── Mock mode helper ─────────────────────────────────────────────────────────
   const runMockJoin = useCallback(
     (channelName: string) => {
-      patch({ connectionState: 'connecting', channelName, isMockMode: true });
+      patch({
+        connectionState: 'connecting',
+        channelName,
+        isMockMode: true,
+        agentStatus: 'starting',
+      });
       setTimeout(() => {
         patch({
           connectionState: 'connected',
           micStatus: 'active',
           speakingState: 'listening',
+          agentStatus: 'active',  // Mock agent "active"
         });
       }, 800);
     },
@@ -88,33 +111,36 @@ export function useAgoraVoice(
     if (voiceState.connectionState === 'connected' || voiceState.connectionState === 'connecting') {
       return;
     }
+    isJoiningRef.current = true;
 
-    patch({ connectionState: 'connecting', errorMessage: null });
+    patch({ connectionState: 'connecting', errorMessage: null, agentStatus: 'inactive' });
 
     try {
-      // 1. Fetch token from backend & resolve App ID
+      // Step 1 — Fetch RTC token from backend
       const tokenData = await getAgoraTokenFromBackend(showroomId, sessionId);
       isMockRef.current = tokenData.mock_voice;
 
       const appId = import.meta.env.VITE_AGORA_APP_ID || tokenData.app_id;
 
-      // Safe debugging (does not print secrets or actual keys)
-      console.log({
-        agoraConfigured: Boolean(import.meta.env.VITE_AGORA_APP_ID || tokenData.app_id),
-        agoraAppIdLength: (import.meta.env.VITE_AGORA_APP_ID || tokenData.app_id)?.length,
+      console.log('[AgoraVoice]', {
+        frameworkDetected: 'Vite + React (TypeScript)',
+        agoraAppIdConfigured: Boolean(appId && appId !== 'MOCK_AGORA_APP_ID'),
+        agoraAppIdLength: appId ? appId.trim().length : 0,
+        tokenConfigured: Boolean(tokenData.token && tokenData.token.trim() !== ''),
+        isMockMode: tokenData.mock_voice,
+        channelName: tokenData.channel_name,
       });
 
-      // 2. Safe development check for missing App ID
+      // Guard: missing App ID
       if (!tokenData.mock_voice && (!appId || appId.trim() === '' || appId === 'MOCK_AGORA_APP_ID')) {
-        console.warn('Agora App ID is missing');
         patch({
           connectionState: 'error',
-          errorMessage: 'Agora App ID is missing',
+          errorMessage: 'Agora App ID is missing. Set VITE_AGORA_APP_ID in your .env file.',
         });
         return;
       }
 
-      // 3. Handle Mock Mode (if enabled)
+      // Step 2 — Mock mode shortcut
       if (tokenData.mock_voice) {
         const hasMic = await requestMicrophonePermission();
         if (!hasMic) {
@@ -125,11 +151,12 @@ export function useAgoraVoice(
         return;
       }
 
-      // 4. Initialize Agora RTC Client
+      // Step 3 — Initialize Agora RTC Client
       const client = createAgoraClient();
       clientRef.current = client;
 
-      // Mirror Agora connection-state changes to our state
+      let remoteCount = 0;
+
       client.on('connection-state-change', (curState: string) => {
         const stateMap: Record<string, AgoraConnectionState> = {
           DISCONNECTED: 'disconnected',
@@ -141,33 +168,43 @@ export function useAgoraVoice(
         patch({ connectionState: stateMap[curState] ?? 'disconnected' });
       });
 
-      // Detect speaking via volume indicator
       client.on('volume-indicator', (volumes: Array<{ uid: number; level: number }>) => {
         const localVolume = volumes.find((v) => v.uid === tokenData.uid);
-        const speakingState: SpeakingState =
-          localVolume && localVolume.level > SPEAKING_VOLUME_THRESHOLD
-            ? 'user_speaking'
-            : 'listening';
-        patch({ speakingState });
+        if (localVolume && localVolume.level > SPEAKING_VOLUME_THRESHOLD) {
+          patch({ speakingState: 'user_speaking' });
+        }
       });
 
-      // 5. Request microphone permission ONLY AFTER Agora initialization & validation check
+      // Step 4 — Request microphone permission
       const hasMic = await requestMicrophonePermission();
       if (!hasMic) {
         patch({ connectionState: 'error', micStatus: 'permission_denied', errorMessage: 'Microphone access denied.' });
         return;
       }
 
-      // 6. Join channel and publish audio track
+      // Step 5 — Join channel and publish mic; wire remote AI audio subscription
       const micTrack = await sdkJoinChannel(
         client,
         appId,
         tokenData.channel_name,
         tokenData.token,
         tokenData.uid,
+        (isRemoteSpeaking: boolean) => {
+          patch({ speakingState: isRemoteSpeaking ? 'ai_speaking' : 'listening' });
+        },
       );
       micTrackRef.current = micTrack;
       enableVolumeIndicator(client);
+
+      // Track remote participant count
+      client.on('user-joined', () => {
+        remoteCount += 1;
+        patch({ remoteParticipants: remoteCount });
+      });
+      client.on('user-left', () => {
+        remoteCount = Math.max(0, remoteCount - 1);
+        patch({ remoteParticipants: remoteCount, speakingState: 'listening' });
+      });
 
       patch({
         connectionState: 'connected',
@@ -175,21 +212,66 @@ export function useAgoraVoice(
         speakingState: 'listening',
         channelName: tokenData.channel_name,
         isMockMode: false,
+        agentStatus: 'starting',
       });
+
+      // Step 6 — Start the Agora Conversational AI Agent
+      console.log('[AgoraVoice] Starting Conversational AI agent on channel:', tokenData.channel_name);
+      try {
+        const agentResult = await startConversationalAgent(tokenData.channel_name, sessionId);
+        console.log('[AgoraVoice] Agent start response:', agentResult);
+
+        if (agentResult.status === 'active' && agentResult.agent_id) {
+          agentIdRef.current = agentResult.agent_id;
+          patch({ agentStatus: 'active', agentId: agentResult.agent_id });
+        } else if (agentResult.status === 'not_configured') {
+          patch({ agentStatus: 'not_configured' });
+          console.warn('[AgoraVoice] Conversational AI not configured:', agentResult.message);
+        } else {
+          patch({ agentStatus: 'error' });
+          console.error('[AgoraVoice] Agent start error:', agentResult.error);
+        }
+      } catch (agentErr) {
+        // Agent start failure is non-fatal — RTC still works for mic capture
+        patch({ agentStatus: 'error' });
+        console.error('[AgoraVoice] Agent start exception (non-fatal):', agentErr);
+      }
+
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Voice connection failed';
-      patch({ connectionState: 'error', errorMessage: msg });
+      console.error('[AgoraVoice Error]:', msg);
+
+      if (msg.includes('CAN_NOT_GET_GATEWAY_SERVER') || msg.includes('invalid vendor key')) {
+        patch({
+          connectionState: 'error',
+          errorMessage: 'Invalid Agora App ID. Replace VITE_AGORA_APP_ID in .env with a real App ID from Agora Console.',
+        });
+      } else {
+        patch({ connectionState: 'error', errorMessage: msg });
+      }
+    } finally {
+      isJoiningRef.current = false;   // ADD THIS — always reset when the attempt finishes
     }
   }, [showroomId, sessionId, voiceState.connectionState, patch, runMockJoin]);
 
   // ── Leave channel ────────────────────────────────────────────────────────────
   const leaveChannel = useCallback(async () => {
+    // Stop the Conversational AI agent first
+    if (agentIdRef.current) {
+      console.log('[AgoraVoice] Stopping Conversational AI agent:', agentIdRef.current);
+      await stopConversationalAgent(agentIdRef.current);
+      agentIdRef.current = null;
+    }
+
     if (isMockRef.current) {
       patch({
         connectionState: 'disconnected',
         micStatus: 'inactive',
         speakingState: 'idle',
         channelName: null,
+        agentStatus: 'stopped',
+        agentId: null,
+        remoteParticipants: 0,
       });
       return;
     }
@@ -206,6 +288,9 @@ export function useAgoraVoice(
       speakingState: 'idle',
       isMuted: false,
       channelName: null,
+      agentStatus: 'stopped',
+      agentId: null,
+      remoteParticipants: 0,
     });
     isMutedRef.current = false;
   }, [patch]);

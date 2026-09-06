@@ -25,8 +25,8 @@ export const QRGenerator: React.FC = () => {
   }, []);
 
   const activeId = customId.trim() ? customId.trim().toUpperCase() : selectedShowroom;
-  const baseUrl = window.location.origin;
-  const qrTargetUrl = `${baseUrl}/showroom/${activeId}`;
+  // Fixed base URL for all generated QR codes and displayed links
+  const qrTargetUrl = 'https://hyundai-ai-flame.vercel.app/';
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qrTargetUrl)}`;
 
   const handleCopyUrl = () => {
@@ -36,8 +36,9 @@ export const QRGenerator: React.FC = () => {
   };
 
   const handleOpenFlow = () => {
-    navigate(`/showroom/${activeId}`);
+    navigate('/');
   };
+
 
   const currentShowroomDetails = showrooms.find(s => s.id === activeId);
 
