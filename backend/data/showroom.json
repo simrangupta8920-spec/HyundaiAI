@@ -1,0 +1,29 @@
+[
+  {
+    "id": "HYD-DEL-001",
+    "name": "Hyundai Connaught Place",
+    "city": "New Delhi",
+    "address": "N-1, Connaught Circus, Connaught Place, New Delhi - 110001",
+    "sales_executive": "Rajesh Kumar",
+    "phone": "+91-11-4567-8900",
+    "active": true
+  },
+  {
+    "id": "HYD-MUM-002",
+    "name": "Hyundai Bandra West",
+    "city": "Mumbai",
+    "address": "Linking Road, Bandra West, Mumbai - 400050",
+    "sales_executive": "Priya Sharma",
+    "phone": "+91-22-9876-5432",
+    "active": true
+  },
+  {
+    "id": "HYD-BLR-003",
+    "name": "Hyundai Indiranagar",
+    "city": "Bengaluru",
+    "address": "100 Feet Road, Indiranagar, Bengaluru - 560038",
+    "sales_executive": "Amit Singh",
+    "phone": "+91-80-1234-5678",
+    "active": true
+  }
+]

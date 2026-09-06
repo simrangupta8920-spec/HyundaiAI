@@ -5,11 +5,13 @@ from typing import List, Optional, Dict, Any
 _vehicles_cache: Optional[List[Dict[str, Any]]] = None
 
 def _get_data_filepath() -> Path:
-    base_dir = Path(__file__).parent.parent.parent.parent / "data"
-    p = base_dir / "vehicles.json"
-    if p.exists():
-        return p
-    return Path("f:/AI/data/vehicles.json")
+    p1 = Path(__file__).parent.parent.parent / "data" / "vehicles.json"
+    if p1.exists():
+        return p1
+    p2 = Path(__file__).parent.parent.parent.parent / "data" / "vehicles.json"
+    if p2.exists():
+        return p2
+    return p1
 
 def load_vehicles() -> List[Dict[str, Any]]:
     global _vehicles_cache

@@ -25,7 +25,9 @@ def seed_db():
     db = SessionLocal()
     try:
         if db.query(Showroom).count() == 0:
-            showroom_path = os.path.join(os.path.dirname(__file__), "../../data/showroom.json")
+            showroom_path = os.path.join(os.path.dirname(__file__), "../data/showroom.json")
+            if not os.path.exists(showroom_path):
+                showroom_path = os.path.join(os.path.dirname(__file__), "../../data/showroom.json")
             if os.path.exists(showroom_path):
                 with open(showroom_path, "r", encoding="utf-8") as f:
                     showroom_data = json.load(f)
@@ -43,7 +45,9 @@ def seed_db():
                 ))
             
         if db.query(Car).count() == 0:
-            cars_path = os.path.join(os.path.dirname(__file__), "../../data/cars.json")
+            cars_path = os.path.join(os.path.dirname(__file__), "../data/cars.json")
+            if not os.path.exists(cars_path):
+                cars_path = os.path.join(os.path.dirname(__file__), "../../data/cars.json")
             if os.path.exists(cars_path):
                 with open(cars_path, "r", encoding="utf-8") as f:
                     car_data = json.load(f)

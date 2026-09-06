@@ -1,0 +1,52 @@
+[
+  {
+    "name": "Tata Motors",
+    "is_primary_brand": false,
+    "is_competitor": true,
+    "models_count": 8,
+    "models": [
+      "Curvv",
+      "Harrier",
+      "Harrier EV",
+      "Nexon",
+      "Punch",
+      "Safari",
+      "Sierra",
+      "Tiago"
+    ]
+  },
+  {
+    "name": "Maruti Suzuki",
+    "is_primary_brand": false,
+    "is_competitor": true,
+    "models_count": 10,
+    "models": [
+      "Alto K10",
+      "Baleno",
+      "Brezza",
+      "Fronx",
+      "Grand Vitara",
+      "Invicto",
+      "S-Presso",
+      "Swift",
+      "Victoris",
+      "WagonR"
+    ]
+  },
+  {
+    "name": "Hyundai",
+    "is_primary_brand": true,
+    "is_competitor": false,
+    "models_count": 8,
+    "models": [
+      "Aura",
+      "Creta",
+      "Exter",
+      "Grand i10 Nios",
+      "Ioniq 5",
+      "Venue",
+      "Verna",
+      "i20"
+    ]
+  }
+]

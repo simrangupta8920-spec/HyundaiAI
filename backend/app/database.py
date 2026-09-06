@@ -1,11 +1,23 @@
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-engine = create_engine(
-    settings.DATABASE_URL, connect_args={"check_same_thread": False}
-)
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+is_sqlite = db_url.startswith("sqlite")
+
+# In Vercel serverless functions, the root directory is read-only.
+# If SQLite is used on Vercel without PostgreSQL, redirect to /tmp/showroom.db
+if is_sqlite and (os.environ.get("VERCEL") or os.environ.get("VERCEL_ENV")):
+    db_url = "sqlite:////tmp/showroom.db"
+
+connect_args = {"check_same_thread": False} if is_sqlite else {}
+
+engine = create_engine(db_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
