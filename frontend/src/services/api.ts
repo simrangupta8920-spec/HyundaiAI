@@ -23,10 +23,19 @@ export const getShowrooms = async () => (await api.get<Showroom[]>('/showroom/li
 export const getCars = async (filters?: any) => (await api.get<Car[]>('/cars', { params: filters })).data;
 export const getCarById = async (id: number) => (await api.get<Car>(`/cars/${id}`)).data;
 export const recommendCars = async (req: any) => (await api.post<Car[]>('/cars/recommend', req)).data;
+
+// Rich Vehicle API endpoints backed by Excel dataset
+export const getVehicles = async (params?: any) => (await api.get<any[]>('/vehicles', { params })).data;
+export const getVehicleById = async (id: string) => (await api.get<any>(`/vehicles/${id}`)).data;
+export const searchVehicles = async (params?: any) => (await api.get<any[]>('/vehicles/search', { params })).data;
+export const compareVehicles = async (ids: string[]) => (await api.get<any>(`/vehicles/compare`, { params: { ids: ids.join(',') } })).data;
+
 export const startSession = async (showroomId?: string, customerName?: string) => (await api.post<{ id: string; showroom_id: string; status: string; started_at: string }>('/conversation/start', { showroom_id: showroomId || 'HYD-DEL-001', customer_name: customerName })).data;
 export const sendMessage = async (sessionId: string, message: string) => (await api.post<ChatResponse>('/conversation/message', { session_id: sessionId, message })).data;
-export const getConversation = async (sessionId: string) => (await api.get<{ messages: Message[] }>(`/conversation/${sessionId}`)).data;
+export const getConversation = async (sessionId: string) => (await api.get<any>(`/conversation/${sessionId}`)).data;
 export const endSession = async (sessionId: string) => (await api.post(`/conversation/${sessionId}/end`)).data;
+
+
 
 export const createLead = async (data: Partial<Lead>) => (await api.post<Lead>('/leads', data)).data;
 export const getLeads = async (token: string, filters?: any) => (await api.get<Lead[]>('/leads', { headers: { Authorization: `Bearer ${token}` }, params: filters })).data;

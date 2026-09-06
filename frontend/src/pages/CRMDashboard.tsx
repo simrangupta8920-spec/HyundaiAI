@@ -4,23 +4,26 @@ import { Navbar } from '../components/Navbar';
 import { useAuth } from '../hooks/useAuth';
 import { Lead, Showroom, Escalation } from '../types';
 import { MOCK_LEADS, MOCK_SHOWROOMS } from '../services/mockData';
+import { getLeads, getEscalationQueue } from '../services/api';
 import {
   Search, Filter, ChevronRight, Users, Flame, AlertTriangle,
   CheckCircle2, Gauge, Car, Calendar, ArrowUpRight, Clock, MapPin,
   TrendingUp, Phone, Mail, ShieldAlert, UserCheck, PhoneCall, Radio,
-  Volume2, Check, X
+  Volume2, Check, X, Sparkles, RefreshCw
 } from 'lucide-react';
 import { LeadStatusBadge } from '../components/LeadStatusBadge';
 
 export const CRMDashboard: React.FC = () => {
-  const { logout } = useAuth();
+  const { token, logout } = useAuth();
   const navigate = useNavigate();
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [showroomFilter, setShowroomFilter] = useState<string>('all');
   const [testDriveFilter, setTestDriveFilter] = useState<string>('all');
+  const [intentFilter, setIntentFilter] = useState<string>('all');
 
   const [escalations, setEscalations] = useState<Escalation[]>([
     {
@@ -53,9 +56,37 @@ export const CRMDashboard: React.FC = () => {
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const activeToken = token || 'mock-token-123';
+      const liveLeads = await getLeads(activeToken);
+      if (liveLeads && liveLeads.length > 0) {
+        setLeads(liveLeads);
+      } else {
+        setLeads(MOCK_LEADS);
+      }
+
+      try {
+        const liveEscalations = await getEscalationQueue(activeToken);
+        if (liveEscalations && liveEscalations.length > 0) {
+          setEscalations(liveEscalations);
+        }
+      } catch {
+        // keep defaults
+      }
+    } catch {
+      console.warn('Backend leads API unavailable, using mock dataset');
+      setLeads(MOCK_LEADS);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    setLeads(MOCK_LEADS);
-  }, []);
+    fetchDashboardData();
+  }, [token]);
+
 
   const showToast = (msg: string) => {
     setToastMessage(msg);

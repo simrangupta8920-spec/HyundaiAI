@@ -3,13 +3,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, Send, AlertTriangle, Mic, MicOff,
   Car as CarIcon, MapPin, Wifi, WifiOff, Loader2, X, CheckCircle, Activity, ChevronDown, ChevronUp,
+  Sparkles, Filter, SlidersHorizontal, Layers, Zap, Award, HelpCircle, CheckCircle2, User, Phone, Mail, FileText,
 } from 'lucide-react';
 import { useConversation } from '../hooks/useConversation';
 import { VoiceWaveform } from '../components/VoiceWaveform';
 import { TranscriptMessage } from '../components/TranscriptMessage';
 import { CarCard } from '../components/CarCard';
-import { createLead } from '../services/api';
+import { createLead, compareVehicles } from '../services/api';
 import { useAgoraVoice } from '../services/agora/useAgoraVoice';
+import { Car } from '../types';
+
 
 export const VoiceAssistant: React.FC = () => {
   const navigate = useNavigate();
@@ -21,7 +24,7 @@ export const VoiceAssistant: React.FC = () => {
 
   const {
     session, messages, isLoading, recommendedCars,
-    shouldCollectLead, shouldEscalate,
+    shouldCollectLead, shouldEscalate, customerState,
     startSession, sendMessage, endSession,
   } = useConversation();
 
@@ -49,6 +52,74 @@ export const VoiceAssistant: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
 
   const showLeadModal = shouldCollectLead && !isLeadFormDismissed;
+
+
+  // Filter state for Recommendations tab
+  const [filterBodyType, setFilterBodyType] = useState<string>('all');
+  const [filterFuelType, setFilterFuelType] = useState<string>('all');
+  const [filterMaxBudget, setFilterMaxBudget] = useState<number>(50);
+  const [sortBy, setSortBy] = useState<'recommended' | 'price_low' | 'price_high'>('recommended');
+
+  // Comparison State
+  const [selectedForCompare, setSelectedForCompare] = useState<Car[]>([]);
+  const [showCompareModal, setShowCompareModal] = useState<boolean>(false);
+  const [compareData, setCompareData] = useState<any>(null);
+  const [loadingCompare, setLoadingCompare] = useState<boolean>(false);
+
+  const quickPrompts = [
+    { label: '🚗 Best SUV under ₹15L', text: 'Recommend the best Hyundai SUV under 15 Lakhs for family use.' },
+    { label: '⚡ EV Options & Range', text: 'What electric vehicle options does Hyundai have and what is their range?' },
+    { label: '📊 Creta vs Nexon', text: 'Compare the Hyundai Creta with Tata Nexon on safety, pricing, and features.' },
+    { label: '💰 EMI & Finance', text: 'What are the EMI options and finance offers for a 12 Lakh car?' },
+    { label: '🗓️ Book Test Drive', text: 'I would like to schedule a test drive at the showroom.' },
+  ];
+
+  const handleToggleCompare = (car: Car) => {
+    setSelectedForCompare((prev) => {
+      const exists = prev.some((c) => c.model_name === car.model_name || c.id === car.id);
+      if (exists) {
+        return prev.filter((c) => c.model_name !== car.model_name && c.id !== car.id);
+      } else {
+        if (prev.length >= 3) {
+          alert('You can compare up to 3 cars at a time.');
+          return prev;
+        }
+        return [...prev, car];
+      }
+    });
+  };
+
+  const handleRunComparison = async () => {
+    if (selectedForCompare.length < 2) {
+      alert('Please select at least 2 cars to compare.');
+      return;
+    }
+    setShowCompareModal(true);
+    setLoadingCompare(true);
+    try {
+      const ids = selectedForCompare.map((c) => {
+        const slug = c.model_name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+        return `hyundai_${slug}_delhi`;
+      });
+      const data = await compareVehicles(ids);
+      setCompareData(data);
+    } catch {
+      setCompareData(null);
+    } finally {
+      setLoadingCompare(false);
+    }
+  };
+
+  const handleAskAIAboutCar = (carModel: string) => {
+    setActiveTab('chat');
+    sendMessage(`Tell me more about the Hyundai ${carModel} features, on-road price in Delhi, and available variants.`);
+  };
+
+  const handleBookDriveForCar = (carModel: string) => {
+    setIsLeadFormDismissed(false);
+    setLeadSaved(false);
+  };
+
 
   // ── Start text session on mount ──────────────────────────────────────────────
   useEffect(() => {
@@ -240,15 +311,36 @@ export const VoiceAssistant: React.FC = () => {
               </button>
             </div>
 
+            {/* Quick Prompts Chips */}
+            <div className="w-full mt-8 mb-2">
+              <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider text-center mb-2">Quick AI Prompts</p>
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                {quickPrompts.map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setTextInput(p.text);
+                      sendMessage(p.text);
+                    }}
+                    disabled={isLoading}
+                    className="text-xs bg-slate-100 hover:bg-blue-50 hover:text-hyundai-blue hover:border-blue-200 border border-slate-200 text-slate-700 font-semibold px-2.5 py-1.5 rounded-full transition-all duration-200 shadow-2xs cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Text input */}
-            <div className="w-full mt-12">
+            <div className="w-full mt-2">
               <form onSubmit={handleSendText} className="relative">
                 <input
                   type="text"
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}
                   placeholder="Or type your message here..."
-                  className="w-full bg-gray-100 border-none rounded-xl py-4 pl-5 pr-14 focus:ring-2 focus:ring-hyundai-blue outline-none transition-shadow"
+                  className="w-full bg-gray-100 border-none rounded-xl py-4 pl-5 pr-14 focus:ring-2 focus:ring-hyundai-blue outline-none transition-shadow text-sm"
                   disabled={isLoading}
                 />
                 <button
@@ -261,7 +353,7 @@ export const VoiceAssistant: React.FC = () => {
               </form>
             </div>
 
-            <button onClick={handleEndSession} className="mt-8 text-sm text-gray-500 hover:text-gray-900 underline">
+            <button onClick={handleEndSession} className="mt-6 text-sm text-gray-500 hover:text-gray-900 underline">
               End Session &amp; View Summary
             </button>
 
@@ -366,27 +458,58 @@ export const VoiceAssistant: React.FC = () => {
 
         {/* Right Panel: Chat & Recommendations tabs */}
         <div className="w-full lg:w-1/2 flex flex-col min-h-0 bg-gray-50 h-[500px] lg:h-auto flex-1">
-          <div className="flex border-b bg-white px-2 pt-2 shrink-0">
-            <button
-              onClick={() => setActiveTab('chat')}
-              className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'chat' ? 'border-hyundai-blue text-hyundai-blue' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-              Conversation
-            </button>
-            <button
-              onClick={() => setActiveTab('cars')}
-              className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'cars' ? 'border-hyundai-blue text-hyundai-blue' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-            >
-              Recommendations
-              {recommendedCars.length > 0 && (
-                <span className="bg-hyundai-blue text-white text-xs px-1.5 py-0.5 rounded-full">{recommendedCars.length}</span>
-              )}
-            </button>
+          <div className="flex border-b bg-white px-2 pt-2 shrink-0 justify-between items-center pr-4">
+            <div className="flex">
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors ${activeTab === 'chat' ? 'border-hyundai-blue text-hyundai-blue' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                Conversation
+              </button>
+              <button
+                onClick={() => setActiveTab('cars')}
+                className={`px-6 py-3 font-semibold text-sm border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'cars' ? 'border-hyundai-blue text-hyundai-blue' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+              >
+                Recommendations
+                {recommendedCars.length > 0 && (
+                  <span className="bg-hyundai-blue text-white text-xs px-1.5 py-0.5 rounded-full">{recommendedCars.length}</span>
+                )}
+              </button>
+            </div>
+
+            {/* Compare Badge Shortcut */}
+            {selectedForCompare.length > 0 && (
+              <button
+                onClick={handleRunComparison}
+                className="text-xs bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer animate-pulse"
+              >
+                <Layers className="w-3.5 h-3.5" /> Compare ({selectedForCompare.length})
+              </button>
+            )}
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 md:p-6 relative">
             {activeTab === 'chat' && (
               <div className="flex flex-col min-h-full">
+                {/* Live Customer Knowledge Card */}
+                {customerState && (customerState.budget_max || customerState.customer_name || customerState.car_type || customerState.fuel) && (
+                  <div className="bg-blue-50/80 border border-blue-200 rounded-2xl p-3 mb-4 text-xs text-slate-700 shadow-xs animate-in fade-in duration-300">
+                    <div className="flex items-center justify-between font-bold text-hyundai-blue mb-1">
+                      <span className="flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-cyan-600" /> Live AI Customer Profile
+                      </span>
+                      <span className="text-[10px] bg-blue-100 text-hyundai-blue px-2 py-0.5 rounded-full font-mono">Grounded Knowledge</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-600 mt-2">
+                      {customerState.customer_name && <span className="bg-white px-2 py-0.5 rounded border border-blue-100 font-medium">👤 Name: {customerState.customer_name}</span>}
+                      {customerState.budget_max && <span className="bg-white px-2 py-0.5 rounded border border-blue-100 font-medium">💰 Budget: ≤ ₹{customerState.budget_max}L</span>}
+                      {customerState.car_type && <span className="bg-white px-2 py-0.5 rounded border border-blue-100 font-medium">🚗 Type: {customerState.car_type}</span>}
+                      {customerState.fuel && <span className="bg-white px-2 py-0.5 rounded border border-blue-100 font-medium">⚡ Fuel: {customerState.fuel}</span>}
+                      {customerState.family_size && <span className="bg-white px-2 py-0.5 rounded border border-blue-100 font-medium">👥 Seats: {customerState.family_size}</span>}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex-1" />
                 {messages.map((msg) => (
                   <TranscriptMessage key={msg.id} message={msg} />
@@ -406,15 +529,123 @@ export const VoiceAssistant: React.FC = () => {
             )}
 
             {activeTab === 'cars' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {recommendedCars.length > 0 ? (
-                  recommendedCars.map((car) => (
-                    <CarCard key={car.id} car={car} isRecommended />
-                  ))
+              <div className="flex flex-col gap-4">
+                {/* Filter & Search Bar */}
+                <div className="bg-white p-3.5 rounded-2xl border border-gray-200 shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                      <Filter className="w-3.5 h-3.5 text-hyundai-blue" /> Filter Models
+                    </span>
+                    {selectedForCompare.length > 0 && (
+                      <button
+                        onClick={handleRunComparison}
+                        className="text-xs bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1 rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                      >
+                        <Layers className="w-3.5 h-3.5" /> Compare ({selectedForCompare.length}) →
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <select
+                      value={filterBodyType}
+                      onChange={(e) => setFilterBodyType(e.target.value)}
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-700 outline-none"
+                    >
+                      <option value="all">Body: All</option>
+                      <option value="SUV">SUV</option>
+                      <option value="Hatchback">Hatchback</option>
+                      <option value="Sedan">Sedan</option>
+                      <option value="MPV">MPV</option>
+                    </select>
+
+                    <select
+                      value={filterFuelType}
+                      onChange={(e) => setFilterFuelType(e.target.value)}
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-700 outline-none"
+                    >
+                      <option value="all">Fuel: All</option>
+                      <option value="Petrol">Petrol</option>
+                      <option value="Diesel">Diesel</option>
+                      <option value="CNG">CNG</option>
+                      <option value="Electric">Electric / EV</option>
+                    </select>
+
+                    <select
+                      value={filterMaxBudget}
+                      onChange={(e) => setFilterMaxBudget(Number(e.target.value))}
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-700 outline-none"
+                    >
+                      <option value={50}>Budget: All</option>
+                      <option value={8}>Under ₹8 Lakhs</option>
+                      <option value={15}>Under ₹15 Lakhs</option>
+                      <option value={25}>Under ₹25 Lakhs</option>
+                    </select>
+
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                      className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-gray-700 outline-none"
+                    >
+                      <option value="recommended">Sort: AI Match</option>
+                      <option value="price_low">Price: Low to High</option>
+                      <option value="price_high">Price: High to Low</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Filtered Grid */}
+                {recommendedCars
+                  .filter((car) => {
+                    if (filterBodyType !== 'all' && car.body_type.toLowerCase() !== filterBodyType.toLowerCase()) return false;
+                    if (filterFuelType !== 'all' && !car.fuel_type.toLowerCase().includes(filterFuelType.toLowerCase())) return false;
+                    if (filterMaxBudget < 50 && car.price_min > filterMaxBudget) return false;
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    if (sortBy === 'price_low') return a.price_min - b.price_min;
+                    if (sortBy === 'price_high') return b.price_min - a.price_min;
+                    return 0;
+                  }).length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {recommendedCars
+                      .filter((car) => {
+                        if (filterBodyType !== 'all' && car.body_type.toLowerCase() !== filterBodyType.toLowerCase()) return false;
+                        if (filterFuelType !== 'all' && !car.fuel_type.toLowerCase().includes(filterFuelType.toLowerCase())) return false;
+                        if (filterMaxBudget < 50 && car.price_min > filterMaxBudget) return false;
+                        return true;
+                      })
+                      .sort((a, b) => {
+                        if (sortBy === 'price_low') return a.price_min - b.price_min;
+                        if (sortBy === 'price_high') return b.price_min - a.price_min;
+                        return 0;
+                      })
+                      .map((car) => (
+                        <CarCard
+                          key={car.id}
+                          car={car}
+                          isRecommended
+                          isSelectedForCompare={selectedForCompare.some((c) => c.model_name === car.model_name || c.id === car.id)}
+                          onToggleCompare={handleToggleCompare}
+                          onAskAI={handleAskAIAboutCar}
+                          onBookTestDrive={handleBookDriveForCar}
+                        />
+                      ))}
+                  </div>
                 ) : (
                   <div className="col-span-full flex flex-col items-center justify-center h-64 text-gray-400">
                     <CarIcon className="w-12 h-12 mb-3 opacity-20" />
-                    <p>No recommendations yet.</p>
+                    <p className="text-sm font-semibold">No models matched your filter criteria.</p>
+                    <button
+                      onClick={() => {
+                        setFilterBodyType('all');
+                        setFilterFuelType('all');
+                        setFilterMaxBudget(50);
+                      }}
+                      className="mt-2 text-xs text-hyundai-blue underline font-bold cursor-pointer"
+                    >
+                      Reset Filters
+                    </button>
                   </div>
                 )}
               </div>
@@ -422,6 +653,102 @@ export const VoiceAssistant: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ── Side-by-Side Comparison Modal ────────────────────────────── */}
+      {showCompareModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-3xl w-full shadow-2xl relative border border-gray-200 max-h-[90vh] overflow-y-auto custom-scrollbar">
+            <button
+              onClick={() => setShowCompareModal(false)}
+              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-purple-600" /> Side-by-Side Vehicle Comparison
+            </h3>
+            <p className="text-xs text-gray-500 mb-6">
+              Comparing {selectedForCompare.length} models across specs, ratings, and pricing.
+            </p>
+
+            {loadingCompare ? (
+              <div className="py-12 text-center text-gray-500 flex flex-col items-center gap-2">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+                <span>Generating comparison matrix from vehicle dataset...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b bg-slate-50">
+                      <th className="p-3 font-bold text-gray-700">Specification</th>
+                      {selectedForCompare.map((c) => (
+                        <th key={c.id} className="p-3 font-extrabold text-hyundai-blue text-sm">
+                          {c.model_name}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y text-gray-700">
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Body Type</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-bold">{c.body_type}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Fuel Type</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-bold">{c.fuel_type}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Transmission</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-bold">{c.transmission}</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Ex-Showroom Price</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-extrabold text-gray-900">₹{c.price_min.toFixed(2)} Lakhs</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Est. On-Road Price</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-extrabold text-hyundai-blue">₹{c.price_max.toFixed(2)} Lakhs</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Seating Capacity</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 font-bold">{c.seating_capacity} Seats</td>
+                      ))}
+                    </tr>
+                    <tr>
+                      <td className="p-3 font-semibold text-gray-500">Features &amp; Highlights</td>
+                      {selectedForCompare.map((c) => (
+                        <td key={c.id} className="p-3 leading-relaxed">
+                          {Array.isArray(c.features) ? c.features.join(" • ") : c.features}
+                        </td>
+                      ))}
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <button onClick={() => setShowCompareModal(false)} className="btn-primary text-xs py-2.5 px-6">
+                Close Comparison
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
 
 
       {/* Escalation Modal */}
