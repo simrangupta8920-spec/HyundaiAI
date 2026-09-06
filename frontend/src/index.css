@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-hyundai-blue text-white px-6 py-3 rounded-xl font-semibold hover:bg-blue-900 transition-all duration-200 shadow-md hover:shadow-lg active:scale-95;
+  }
+  .btn-secondary {
+    @apply bg-white text-hyundai-blue border-2 border-hyundai-blue px-6 py-3 rounded-xl font-semibold hover:bg-hyundai-blue hover:text-white transition-all duration-200;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-md p-6 border border-gray-100;
+  }
+  .badge-hot {
+    @apply bg-red-100 text-red-700 text-xs font-semibold px-2 py-1 rounded-full;
+  }
+  .badge-warm {
+    @apply bg-orange-100 text-orange-700 text-xs font-semibold px-2 py-1 rounded-full;
+  }
+  .badge-new {
+    @apply bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-1 rounded-full;
+  }
+  .badge-converted {
+    @apply bg-green-100 text-green-700 text-xs font-semibold px-2 py-1 rounded-full;
+  }
+}
