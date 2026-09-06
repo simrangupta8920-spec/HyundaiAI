@@ -1,0 +1,30 @@
+# Dependencies
+node_modules
+frontend/node_modules
+.pnpm-store
+
+# Build & Output
+dist
+frontend/dist
+.vercel
+.output
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE / OS
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+
+# Python / Backend
+__pycache__
+*.pyc
+.pytest_cache
+*.db
+showroom.db
+backend/showroom.db
